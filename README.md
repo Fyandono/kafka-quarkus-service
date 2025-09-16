@@ -1,79 +1,103 @@
-# kafka-quarkus-service
+# Proyek Layanan Kafka Sederhana
 
-This project uses Quarkus, the Supersonic Subatomic Java Framework.
+Proyek ini adalah contoh layanan sederhana menggunakan **Quarkus**, **Apache Kafka**, dan **PostgreSQL**, dengan **Java 17** sebagai versi Java yang digunakan. Aplikasi ini memproses transaksi secara asynchronous:
 
-If you want to learn more about Quarkus, please visit its website: <https://quarkus.io/>.
+* Menerima pesan JSON dari topik Kafka.
+* Memproses pesan dan menyimpan data transaksi ke database PostgreSQL.
+* Mengirim pesan hasil kembali ke topik Kafka yang berbeda.
 
-## Running the application in dev mode
+Panduan ini akan membantu menyiapkan dan menguji aplikasi.
 
-You can run your application in dev mode that enables live coding using:
+---
 
-```shell script
-./mvnw quarkus:dev
+## 🚀 Persiapan Lingkungan
+
+Menggunakan **Docker Compose** untuk menyederhanakan setup Kafka dan PostgreSQL. Pastikan **Docker Desktop** sudah terinstal dan sistem menggunakan **Java 17**.
+
+### Mulai Layanan Eksternal
+
+Buka terminal di direktori root proyek dan jalankan:
+
+```bash
+docker compose up -d
 ```
 
-> **_NOTE:_**  Quarkus now ships with a Dev UI, which is available in dev mode only at <http://localhost:8080/q/dev/>.
+Ini akan menjalankan tiga kontainer:
 
-## Packaging and running the application
+* **zookeeper**: Layanan koordinasi untuk Kafka.
+* **kafka**: Broker Kafka dengan topik `my-input-topic` dan `my-output-topic` yang dibuat otomatis.
+* **postgres-db**: Database PostgreSQL untuk menyimpan data transaksi.
 
-The application can be packaged using:
+---
 
-```shell script
-./mvnw package
+## 🕵️‍♂️ Pengujian Manual
+
+Langkah-langkah berikut akan membantu menguji aplikasi secara manual:
+
+### 1. Jalankan Aplikasi di Mode Dev
+
+```bash
+quarkus dev
 ```
 
-It produces the `quarkus-run.jar` file in the `target/quarkus-app/` directory.
-Be aware that it’s not an _über-jar_ as the dependencies are copied into the `target/quarkus-app/lib/` directory.
+### 2. Kirim Pesan ke Kafka
 
-The application is now runnable using `java -jar target/quarkus-app/quarkus-run.jar`.
+Masuk ke kontainer Kafka:
 
-If you want to build an _über-jar_, execute the following command:
-
-```shell script
-./mvnw package -Dquarkus.package.jar.type=uber-jar
+```bash
+docker exec -it kafka /bin/bash
 ```
 
-The application, packaged as an _über-jar_, is now runnable using `java -jar target/*-runner.jar`.
+Jalankan producer dan kirim pesan JSON:
 
-## Creating a native executable
-
-You can create a native executable using:
-
-```shell script
-./mvnw package -Dnative
+```bash
+kafka-console-producer --bootstrap-server localhost:9092 --topic my-input-topic
 ```
 
-Or, if you don't have GraalVM installed, you can run the native executable build in a container using:
+Contoh pesan JSON:
 
-```shell script
-./mvnw package -Dnative -Dquarkus.native.container-build=true
+```json
+{"userId":"user-001", "amount":1500.0}
 ```
 
-You can then execute your native executable with: `./target/kafka-quarkus-service-1.0.0-SNAPSHOT-runner`
+### 3. Verifikasi Data
 
-If you want to learn more about building native executables, please consult <https://quarkus.io/guides/maven-tooling>.
+* **Log Aplikasi**: Lihat terminal `quarkus dev` untuk memastikan pesan diterima, diproses, dan dikirim keluar.
+* **Database**: Masuk ke PostgreSQL dan periksa data transaksi:
 
-## Related Guides
+```bash
+docker exec -it postgres-db psql -U postgres -c "SELECT * FROM transaction;"
+```
 
-- REST ([guide](https://quarkus.io/guides/rest)): A Jakarta REST implementation utilizing build time processing and Vert.x. This extension is not compatible with the quarkus-resteasy extension, or any of the extensions that depend on it.
-- Hibernate ORM ([guide](https://quarkus.io/guides/hibernate-orm)): Define your persistent model with Hibernate ORM and Jakarta Persistence
-- Apache Kafka Client ([guide](https://quarkus.io/guides/kafka)): Connect to Apache Kafka with its native API
-- Hibernate ORM with Panache ([guide](https://quarkus.io/guides/hibernate-orm-panache)): Simplify your persistence code for Hibernate ORM via the active record or the repository pattern
-- JDBC Driver - PostgreSQL ([guide](https://quarkus.io/guides/datasource)): Connect to the PostgreSQL database via JDBC
+* **Pesan Keluar**: Pastikan aplikasi mengirim pesan ke topik `my-output-topic`:
 
-## Provided Code
+```bash
+docker exec -it kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic my-output-topic --from-beginning
+```
 
-### Hibernate ORM
+### 4. Contoh Status Transaksi
 
-Create your first JPA entity
+Aplikasi menetapkan status transaksi berdasarkan jumlah `amount`:
 
-[Related guide section...](https://quarkus.io/guides/hibernate-orm)
+* **HIGH\_VALUE**: Jika `amount` > 1000
+* **NORMAL**: Jika `amount` ≤ 1000
 
-[Related Hibernate with Panache section...](https://quarkus.io/guides/hibernate-orm-panache)
+Contoh kasus:
 
+| userId   | amount | status      |
+| -------- | ------ | ----------- |
+| user-001 | 1500.0 | HIGH\_VALUE |
+| user-002 | 500.0  | NORMAL      |
+| user-003 | 1200.0 | HIGH\_VALUE |
 
-### REST
+Ini membantu pengguna memahami bagaimana aplikasi menandai transaksi berdasarkan nilai amount.
 
-Easily start your REST Web Services
+---
 
-[Related guide section...](https://quarkus.io/guides/getting-started-reactive#reactive-jax-rs-resources)
+## 🛑 Menghentikan Layanan
+
+```bash
+docker compose down
+```
+
+Selamat menguji aplikasi!
